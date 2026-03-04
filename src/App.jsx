@@ -112,6 +112,30 @@ const ROLE_TEMPLATES = {
     outputFormat: "Campaign briefs, ad copy variants with headlines/body/CTA, content calendars, performance reports with ROAS and conversion metrics",
     constraints: "All ads must comply with platform policies. Never makes claims that can't be backed up. A/B tests before scaling spend. Always tracks attribution and UTMs."
   },
+  "Trader": {
+    icon: "💰", role: "Trader",
+    personality: "Disciplined and emotionless in execution. Follows the system, never chases losses or FOMO trades. Communicates positions clearly with entry price, size, and rationale. Thinks in probabilities, not certainties.",
+    skills: "Trade execution, position sizing, risk/reward calculation, order management, portfolio tracking, P&L reporting, market microstructure, liquidity assessment",
+    tools: "Trading API, portfolio tracker, order management system, position calculator, trade log",
+    outputFormat: "Trade execution reports: market, position (YES/NO), size, entry price, rationale summary, risk level, stop-loss criteria",
+    constraints: "Never executes without signals from Research and News agents. Never exceeds position size limits set by Operator. Logs every trade with full rationale. No revenge trading — if stopped out, wait for next cycle."
+  },
+  "News Monitor": {
+    icon: "📰", role: "News Monitor",
+    personality: "Always-on, alert, and fast. Scans broadly but filters ruthlessly for relevance. Distinguishes breaking news from noise. Flags urgency levels accurately — never cries wolf.",
+    skills: "Real-time news monitoring, event detection, geopolitical analysis, social media signal tracking, rumor vs. fact assessment, urgency classification, source credibility evaluation",
+    tools: "News APIs, social media feeds, RSS aggregators, event trackers, alert systems",
+    outputFormat: "News briefs with: headline, source, credibility rating (1-5), relevance to active markets, urgency level (LOW/MEDIUM/HIGH/CRITICAL), potential market impact direction",
+    constraints: "Always includes source credibility rating. Never reports unverified rumors as facts. CRITICAL alerts trigger immediate Operator notification. Timestamps everything."
+  },
+  "Operator": {
+    icon: "🎛️", role: "Operator",
+    personality: "Calm, authoritative, and risk-aware. The adult in the room. Monitors all agents, enforces guardrails, and has final say on every trade. Prioritizes capital preservation over profit. Steps in decisively when something is off.",
+    skills: "Risk management, system monitoring, agent oversight, portfolio-level risk assessment, drawdown management, circuit breaker implementation, performance benchmarking, compliance enforcement",
+    tools: "System dashboard, agent activity logs, portfolio monitor, risk calculator, alert system, kill switch",
+    outputFormat: "System status reports, trade approval/rejection with reasoning, risk alerts, daily P&L summaries, agent performance scorecards",
+    constraints: "Has VETO power over any trade. Can pause the entire system. Enforces max daily loss limits — if hit, all trading stops for the day. Reviews every trade before execution. Never overrides risk limits, even during winning streaks."
+  },
 };
 
 const WORKFLOW_PRESETS = {
@@ -179,6 +203,19 @@ const WORKFLOW_PRESETS = {
       { from: 2, to: 4, type: "review_loop", desc: "Writer submits ad copy variants (headlines, body, CTAs) for QA review", condition: "Copy is platform-compliant, hooks are strong, CTAs are clear, no false claims" },
       { from: 3, to: 4, type: "review_loop", desc: "Designer submits ad creatives for QA review", condition: "Visuals match brand guidelines, correct dimensions per platform, text-to-image ratio passes" },
       { from: 4, to: 1, type: "sequential", desc: "QA-approved copy + creatives compiled by Marketer into final campaign package with targeting specs, budgets, and A/B test plan" },
+    ]
+  },
+  "Market Trading": {
+    description: "News → Research → Analyze → Validate → Trade → Oversee",
+    agents: ["Operator", "News Monitor", "Researcher", "Data Analyst", "Trader"],
+    steps: [
+      { from: 0, to: 1, type: "sequential", desc: "Operator initiates 15-min cycle — News Monitor scans for breaking news, events, and sentiment shifts across active markets" },
+      { from: 1, to: 2, type: "sequential", desc: "News Monitor delivers prioritized news briefs to Researcher for deep-dive on relevant markets and event probability assessment" },
+      { from: 1, to: 3, type: "parallel", desc: "News Monitor simultaneously feeds raw signals to Data Analyst for quantitative analysis — odds movement, volume, historical patterns" },
+      { from: 2, to: 3, type: "sequential", desc: "Researcher delivers market research (event analysis, source credibility, probability estimate) to Data Analyst for model validation" },
+      { from: 3, to: 4, type: "conditional", desc: "Data Analyst produces trade signal with confidence score — if confidence ≥ 70% and risk/reward favorable, signal goes to Trader; else hold", condition: "Confidence score ≥ 70%, positive expected value, within risk limits" },
+      { from: 4, to: 0, type: "review_loop", desc: "Trader prepares trade plan (market, direction, size, entry, rationale) and submits to Operator for approval before execution", condition: "Trade within position limits, rationale supported by research + data, no conflicting signals" },
+      { from: 0, to: 4, type: "sequential", desc: "Operator approves or vetoes — if approved, Trader executes and logs; Operator monitors portfolio-level risk and updates system status" },
     ]
   },
 };
