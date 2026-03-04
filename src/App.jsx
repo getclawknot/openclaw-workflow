@@ -690,6 +690,145 @@ Final output delivered to Owner
 - Incomplete output → receiving agent requests clarification before proceeding.
 ` });
 
+  // Autonomous mode: generate heartbeat files and system.md
+  if (project.autonomous) {
+    const interval = project.cycleInterval || "15";
+    const hasOperator = agents.some(a => a.role === "Operator");
+
+    // system.md — global system configuration
+    files.push({ name: "system.md", content: `# System Configuration — system.md
+
+## Operation Mode
+**Mode:** Autonomous (24/7)
+**Cycle Interval:** Every ${interval} minutes
+**Owner:** ${project.owner || "Not specified"}
+
+## Global Cycle Clock
+The system runs on a **${interval}-minute cycle**. Each cycle follows the full workflow pipeline:
+
+\`\`\`
+[Cycle Start] → ${workflow.map((step, i) => { const from = lk[step.fromAgent]; return from?.name || "?"; }).filter((v, i, a) => a.indexOf(v) === i).join(" → ")} → [Cycle End + Log]
+\`\`\`
+
+### Cycle Phases
+1. **GATHER** (0:00–${Math.floor(interval * 0.25)}:00) — Input agents collect fresh data, news, signals
+2. **ANALYZE** (${Math.floor(interval * 0.25)}:00–${Math.floor(interval * 0.5)}:00) — Processing agents analyze, model, and validate
+3. **DECIDE** (${Math.floor(interval * 0.5)}:00–${Math.floor(interval * 0.7)}:00) — Decision agents evaluate and prepare actions
+4. **EXECUTE** (${Math.floor(interval * 0.7)}:00–${Math.floor(interval * 0.85)}:00) — Action agents execute approved decisions
+5. **LOG** (${Math.floor(interval * 0.85)}:00–${interval}:00) — All agents log status, results, and metrics
+
+## Circuit Breakers
+These rules override all agent decisions and trigger an immediate system pause:
+
+| Trigger | Action |
+|---------|--------|
+| Max daily loss limit hit | HALT all activity, notify Owner |
+| 3 consecutive failed cycles | PAUSE system, run diagnostics |
+| Agent unresponsive for 2+ cycles | ALERT ${hasOperator ? "Operator" : "Owner"}, reassign tasks |
+| Critical error in any agent | HALT affected pipeline, notify ${hasOperator ? "Operator" : "Owner"} |
+| External API/service down | PAUSE dependent agents, continue others |
+
+## Kill Switch Protocol
+${hasOperator ? `The **Operator** can trigger a full system halt at any time by issuing:
+\`\`\`
+SYSTEM HALT — Reason: [description]
+\`\`\`
+All agents must immediately:` : `The **Owner** can trigger a full system halt. All agents must immediately:`}
+1. Stop current work
+2. Log current state and any pending actions
+3. Enter standby mode
+4. Await restart authorization from ${hasOperator ? "Operator or Owner" : "Owner"}
+
+## Recovery Procedures
+After a pause or halt:
+1. ${hasOperator ? "Operator" : "Owner"} reviews logs from last active cycle
+2. Root cause identified and resolved
+3. System restart authorized
+4. First cycle runs in **DRY RUN** mode (no real execution)
+5. If dry run passes, resume normal autonomous operation
+
+## Health Dashboard
+Each cycle, the system should output:
+- **Cycle #** and timestamp
+- **Agent status** (all agents: ✅ active / ⚠️ degraded / ❌ down)
+- **Key metrics** from the cycle
+- **Alerts** (if any circuit breakers are close to triggering)
+- **Next cycle** scheduled time
+` });
+
+    // heartbeat.md for each agent
+    agents.forEach(agent => {
+      const isOperator = agent.role === "Operator";
+      const slug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+      files.push({ name: `agents/${slug}/heartbeat.md`, content: `# ${agent.name} — heartbeat.md
+
+## Heartbeat Configuration
+- **Agent:** ${agent.name} (${agent.role})
+- **Cycle Interval:** Every ${interval} minutes
+- **Mode:** Autonomous
+
+## Cycle Responsibilities
+Each ${interval}-minute cycle, this agent must:
+
+### 1. Wake & Check In
+- Confirm active status
+- Check for pending inputs from upstream agents
+- Verify tool/API access is functional
+
+### 2. Execute Cycle Work
+${(() => {
+  const incoming = workflow.filter(s => s.toAgent === agent.id);
+  const outgoing = workflow.filter(s => s.fromAgent === agent.id);
+  let work = "";
+  if (incoming.length > 0) {
+    work += `- Receive inputs from: ${incoming.map(s => lk[s.fromAgent]?.name || "Unknown").join(", ")}\n`;
+  }
+  work += `- Perform core ${agent.role} tasks as defined in agent.md\n`;
+  if (outgoing.length > 0) {
+    work += `- Deliver outputs to: ${outgoing.map(s => lk[s.toAgent]?.name || "Unknown").join(", ")}\n`;
+  }
+  return work;
+})()}
+### 3. Log & Report
+- Log cycle completion status: ✅ SUCCESS / ⚠️ PARTIAL / ❌ FAILED
+- Record key outputs and metrics
+- Flag any anomalies or blockers
+
+## Health Check Signals
+This agent is **HEALTHY** when:
+- ✅ Responds within 60 seconds of cycle start
+- ✅ Completes assigned work within the cycle window
+- ✅ Successfully hands off to downstream agents
+- ✅ All required tools/APIs are accessible
+
+This agent is **DEGRADED** when:
+- ⚠️ Response delayed but completes within cycle
+- ⚠️ Partial output delivered
+- ⚠️ Non-critical tool unavailable
+
+This agent is **DOWN** when:
+- ❌ No response for 2+ consecutive cycles
+- ❌ Critical tool/API unreachable
+- ❌ Producing errors or invalid output
+
+## Failure Protocol
+If this agent fails:
+1. Log error with full context
+2. ${isOperator ? "Alert Owner immediately" : `Alert ${hasOperator ? "Operator" : "Owner"}`}
+3. ${isOperator ? "System enters SAFE MODE — no new actions until Operator restored" : "Downstream agents enter WAIT state"}
+4. Attempt self-recovery on next cycle
+5. If failed for 3 consecutive cycles → ${isOperator ? "Owner must manually intervene" : `${hasOperator ? "Operator" : "Owner"} decides: restart, replace, or pause pipeline`}
+
+## Idle Behavior
+When no new inputs are available this cycle:
+- ${isOperator ? "Run system health check across all agents" : "Run self-diagnostics and verify tool access"}
+- ${isOperator ? "Review cumulative metrics and update dashboard" : "Review and optimize previous cycle outputs"}
+- Log idle status — do NOT fabricate work
+` });
+    });
+  }
+
   return files;
 }
 
@@ -812,7 +951,7 @@ function downloadZip(files, projectName) {
 
 export default function App() {
   const [step, setStep] = useState(0);
-  const [project, setProject] = useState({ name: "", owner: "", description: "", mission: "", workflowPhilosophy: "" });
+  const [project, setProject] = useState({ name: "", owner: "", description: "", mission: "", workflowPhilosophy: "", autonomous: false, cycleInterval: "15" });
   const [agents, setAgents] = useState([]);
   const [editingAgent, setEditingAgent] = useState(null);
   const [showRolePicker, setShowRolePicker] = useState(false);
@@ -887,6 +1026,39 @@ export default function App() {
               placeholder="e.g. Deliver production-ready code through collaborative AI agents with built-in quality assurance..." hint="Optional — auto-generated if blank" />
             <Input label="Workflow Philosophy" multiline rows={2} value={project.workflowPhilosophy} onChange={v => setProj("workflowPhilosophy", v)}
               placeholder="e.g. 'Every output must be reviewed before moving forward. Agents ask questions rather than assume.'" hint="Optional" />
+
+            {/* Autonomous Mode */}
+            <div style={{ marginTop: 6, marginBottom: 14 }}>
+              <label style={{ fontSize: 10, fontWeight: 600, color: "#888", letterSpacing: 0.8, textTransform: "uppercase", display: "block", marginBottom: 8 }}>
+                Operation Mode
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[
+                  { val: false, label: "Manual", icon: "👤", desc: "Owner triggers each cycle" },
+                  { val: true, label: "Autonomous", icon: "🤖", desc: "Runs continuously on a timer" },
+                ].map(opt => (
+                  <div key={String(opt.val)} onClick={() => setProj("autonomous", opt.val)} style={{
+                    flex: 1, padding: "12px 14px", borderRadius: 10, cursor: "pointer",
+                    background: project.autonomous === opt.val ? "#6ee7b711" : "#111",
+                    border: `1px solid ${project.autonomous === opt.val ? "#6ee7b744" : "#2a2a2a"}`,
+                    transition: "all 0.15s"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>{opt.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: project.autonomous === opt.val ? "#6ee7b7" : "#ddd" }}>{opt.label}</div>
+                        <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>{opt.desc}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {project.autonomous && (
+              <Input label="Cycle Interval (minutes)" value={project.cycleInterval} onChange={v => setProj("cycleInterval", v)}
+                placeholder="e.g. 15" hint="How often agents run a full cycle" />
+            )}
           </div>
         )}
 
